@@ -1,0 +1,263 @@
+---
+title: "Headtracking and Depressive Symptoms in VR"
+output:
+  pdf_document:
+    latex_engine: xelatex
+  html_document: default
+  word_document: default
+date: "2026-03-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(readr)
+library(janitor)
+library(purrr)
+```
+
+```{r}
+
+library(readxl)
+
+data <- read_excel("data.xlsx")
+```
+
+```{r}
+summary(data$score_phq)
+summary(data$score_gad)
+summary(data$score_stai_t)
+summary(data$age)
+```
+
+```{r}
+hist(data$score_phq)
+hist(data$score_gad)
+hist(data$score_stai_t)
+```
+
+```{r}
+cor(data$score_phq, data$score_gad)
+#0.5792573
+cor(data$score_phq, data$score_stai_t)
+#0.6424657
+cor(data$score_gad, data$score_stai_t)
+#0.6967173
+
+library(ggplot2)
+
+ggplot(data, aes(score_phq, score_gad)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+
+ggplot(data, aes(score_gad, score_stai_t)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+#use this to justify controlling for anxiety
+```
+
+```{r}
+#converting numeric values to categories
+data$gender <- factor(data$gender)
+data$vr_experience <- factor(data$vr_experience)
+```
+
+```{r}
+table(data$gender) # Gender was recorded using numeric codes in the dataset. Because the coding scheme was not explicitly documented, gender was treated as a categorical variable without assigning specific labels
+table(data$vr_experience) 
+```
+
+```{r}
+colSums(is.na(data)) #mentions how many data entries are missing or not entered
+```
+
+```{r}
+data$positive_affect_change <- data$positive_affect_end - data$positive_affect_start
+data$negative_affect_change <- data$negative_affect_end - data$negative_affect_start
+#difference between mood at the start and at the end
+
+summary(data$positive_affect_change)
+summary(data$negative_affect_change)
+```
+
+```{r}
+cor(data$score_phq, data$positive_affect_change)
+#-0.1091214 So negligible correlation.
+library(ggplot2)
+
+ggplot(data, aes(score_phq, positive_affect_change)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+#This relates to anhedonia, a core symptom of depression, where people show reduced emotional responsiveness.
+
+```
+```{r}
+t.test(data$positive_affect_start, data$positive_affect_end, paired=TRUE)
+#A paired t-test indicated that positive affect significantly increased from the beginning to the end of the VR session (t(39) = 2.09, p = .043), with a mean increase of 2.38 points.
+#The confidence interval tells you the plausible range of the true increase in the population. Since the interval does not include 0, the test detects a real effect.
+t.test(data$negative_affect_start, data$negative_affect_end, paired=TRUE)
+#No significant change was observed in negative affect between the start and end of the session (t(39) = −1.06, p = .29).
+#Negative mood decreased slightly, but the change is not statistically significant. The p-value is much larger than 0.05, and the confidence interval includes 0.This means the data do not provide strong evidence that the VR session changed negative mood.
+```
+
+
+```{r}
+#we create a depression group where score_phq>=10 should only be considered
+data$depression_group <- ifelse(data$score_phq >= 10, "Depressed", "Non_depressed")
+data$depression_group <- factor(data$depression_group) 
+
+table(data$depression_group)
+#depressed = 8 non-depressed = 32
+```
+
+```{r}
+#mean phq of the two depression groups
+aggregate(score_phq ~ depression_group, data, mean)
+#depressed = 13.75000
+#non-depressed = 4.09375
+```
+
+```{r}
+#visualising the above
+library(ggplot2)
+
+ggplot(data, aes(depression_group, score_phq)) +
+  geom_boxplot()
+```
+
+```{r}
+#checking for demographic differences between the two groups
+t.test(age ~ depression_group, data = data)
+#An independent samples t-test indicated no significant age difference between the depressed and non-depressed groups (t = −1.06, p = .31
+table(data$gender, data$depression_group)
+```
+
+```{r}
+t.test(positive_affect_start ~ depression_group, data = data)
+#Participants with higher depressive symptoms showed lower baseline positive affect (M = 29.63) compared to non-depressed participants (M = 35.75), although this difference did not reach statistical significance (t = −1.96, p = .08).
+#The likely reason is small sample size in the depressed group (n = 8), which reduces statistical power.
+t.test(negative_affect_start ~ depression_group, data = data)
+#No significant difference was observed in baseline negative affect between the groups (t = 0.22, p = .83).
+```
+
+NOW WE WILL LOAD THE HEADTRACKING DATA
+
+```{r}
+ht <- read_csv(paste0("headtracking-data/v1/", data$v1[1]), show_col_types = FALSE)
+```
+
+```{r}
+nrow(ht)
+summary(ht)
+head(ht)
+```
+
+```{r}
+names(ht)
+str(ht)
+```
+```{r}
+ht$RotationChangeX <- as.numeric(ht$RotationChangeX)
+
+ht$RotationSpeedTotal <- as.numeric(ht$RotationSpeedTotal)
+```
+
+```{r}
+#rotation variability.basically how much the head orientation varied during the video.
+sd_rot_x <- sd(ht$RotationChangeX, na.rm = TRUE)
+sd_rot_y <- sd(ht$RotationChangeY, na.rm = TRUE)
+sd_rot_z <- sd(ht$RotationChangeZ, na.rm = TRUE)
+
+#how fast the participant moved their head on average.
+mean_speed <- mean(ht$RotationSpeedTotal, na.rm = TRUE)
+```
+
+```{r}
+total_rotation <- sum(abs(ht$RotationChangeX), na.rm = TRUE) +
+                  sum(abs(ht$RotationChangeY), na.rm = TRUE) +
+                  sum(abs(ht$RotationChangeZ), na.rm = TRUE)
+
+movement_summary <- data.frame(
+  sd_rot_x = sd_rot_x,
+  sd_rot_y = sd_rot_y,
+  sd_rot_z = sd_rot_z,
+  mean_speed = mean_speed,
+  total_rotation = total_rotation
+)
+
+movement_summary
+```
+
+```{r}
+#we convert the above work to a function to automate for rest of video 1 participants
+process_headtracking <- function(filename, folder){
+
+  ht <- read_csv(paste0(folder, "/", filename), show_col_types = FALSE)
+
+  # force numeric conversion
+  ht$RotationChangeX   <- as.numeric(ht$RotationChangeX)
+  ht$RotationChangeY   <- as.numeric(ht$RotationChangeY)
+  ht$RotationChangeZ   <- as.numeric(ht$RotationChangeZ)
+  ht$RotationSpeedTotal <- as.numeric(ht$RotationSpeedTotal)
+
+  data.frame(
+    sd_rot_x = sd(ht$RotationChangeX, na.rm = TRUE),
+    sd_rot_y = sd(ht$RotationChangeY, na.rm = TRUE),
+    sd_rot_z = sd(ht$RotationChangeZ, na.rm = TRUE),
+    mean_speed = mean(ht$RotationSpeedTotal, na.rm = TRUE),
+    total_rotation =
+      sum(abs(ht$RotationChangeX), na.rm = TRUE) +
+      sum(abs(ht$RotationChangeY), na.rm = TRUE) +
+      sum(abs(ht$RotationChangeZ), na.rm = TRUE)
+  )
+}
+```
+
+```{r}
+library(purrr)
+
+movement_v1 <- map_dfr(data$v1, process_headtracking, folder="headtracking-data/v1")
+
+```
+
+```{r}
+nrow(movement_v1)
+head(movement_v1)
+```
+
+```{r}
+movement_v1$participant <- data$participant
+
+analysis_data <- dplyr::left_join(data, movement_v1, by = "participant")
+```
+
+```{r}
+#Relation between depression and total rotation for video 1
+cor.test(analysis_data$score_phq,
+         analysis_data$total_rotation)
+
+#predicting whether depression produces reduced movement
+cor.test(analysis_data$score_phq,
+         analysis_data$sd_rot_y)
+
+cor.test(analysis_data$score_phq,
+         analysis_data$mean_speed)
+```
+
+```{r}
+library(ggplot2)
+
+ggplot(analysis_data,
+       aes(x = score_phq,
+           y = total_rotation)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  labs(
+    x = "PHQ-9 Depression Score",
+    y = "Total Head Rotation",
+    title = "Relationship Between Depression and Head Movement"
+  )
+```
